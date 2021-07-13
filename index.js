@@ -33,13 +33,13 @@ for (let i = 0; i < NUM_DBS; i++) {
 console.log('Reading documents...')
 const DOCS = fs.readdirSync(`./corpus`).map(name => fs.readFileSync(`./corpus/${name}`, 'utf8').split(`\n`).filter(line => !!line.trim() && !line.startsWith('#'))).flat()
 console.log({ts: true}, `Done (${DOCS.length} documents)`)
-console.log('Indexing...')
+console.log('Indexing (this may take multiple minutes)...')
 for (let i = 0; i < DOCS.length; i++) {
   await index(i, DOCS[i])
 }
-for (let db of ALL_DBS) {
-  await db.tx.flush()
-}
+// for (let db of ALL_DBS) {
+//   await db.tx.flush()
+// }
 console.log({ts: true}, 'Done')
 
 console.log('Executing query...')
@@ -71,30 +71,33 @@ function toTokens (str) {
 async function index (id, text) {
   const db = DB_FOR(id)
   
-  //DB_FOR(id).batch()
-  if (!db.tx) db.tx = db.batch()
-  const tx = db.tx
+  const tx = DB_FOR(id).batch()
+  // if (!db.tx) db.tx = db.batch()
+  // const tx = db.tx
 
   await tx.put(`docs:${id}`, {text})
   for (let token of toTokens(text)) {
-    await tx.put(`idx:${token}:${id}`, {})
+    const item = await db.get(`idx:${token}:${id}`)
+    const value = item?.value || {docIds: []}
+    value.docIds.push(id)
+    await tx.put(`idx:${token}`, value)
   }
-  // await tx.flush()
+  await tx.flush()
 }
 
 async function search (query, limit = 10) {
   const queryTokens = toTokens(query)
-  const listsPromises = []
+  const getsPromises = []
   for (let db of ALL_DBS) {
     for (let qt of queryTokens) {
-      listsPromises.push(db.list({gt: `idx:${qt}:\x00`, lt: `idx:${qt}:\xff`}))
+      getsPromises.push(db.get(`idx:${qt}`))
     }
   }
-  const listsResults = await Promise.all(listsPromises)
+  const getResults = await Promise.all(getsPromises)
   const docIdHits = {}
-  for (let listResults of listsResults) {
-    for (let item of listResults) {
-      const docId = item.key.split(':')[2]
+  for (let item of getResults) {
+    if (!item?.value?.docIds?.length) continue
+    for (let docId of item.value.docIds) {
       docIdHits[docId] = (docIdHits[docId] || 0) | 1
     }
   }
