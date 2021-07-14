@@ -81,7 +81,7 @@ for (let queryToken of toTokens(query)) {
 
 function toTokens (str) {
   let arr = Array.isArray(str) ? str : tokenizer.tokenize(str)
-  return [...new Set(arr.map(token => token.toLowerCase()).filter(token => !stopwords.english.includes(token)))].map(token => natural.Metaphone.process(token))
+  return [...new Set(arr.map(token => token.toLowerCase()).filter(token => !stopwords.english.includes(token)))].map(token => natural.PorterStemmer.stem(token))
 }
 
 async function index (id, text) {
